@@ -1,0 +1,22 @@
+FIAP — MBA Machine Learning Engineering
+Prova Substitutiva — Fase 1
+Aluno: Thiago Pagotto - RM361741
+
+LINKS DE ENTREGA
+
+API (link compartilhável):
+    https://<seu-host>/docs
+
+Repositório no GitHub:
+    https://github.com/<seu-usuario>/<seu-repo>
+
+Vídeo de demonstração (mínimo 5 minutos):
+    https://<youtube|drive|loom>/<link-do-video>
+
+Dicas:
+- A documentação da API (Swagger/OpenAPI) está em /docs.
+- O desenho da arquitetura está em docs/ARCHITECTURE.md (com diagramas Mermaid).
+- A visão analítica está no dashboard Streamlit (link incluso, se publicado),
+  e também pode ser explorada via endpoints /analytics/* da API.
+- O cache é populado a partir de um snapshot (seed) e pode ser atualizado
+  com POST /admin/refresh.
