@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fase1
+  labels:
+    app.kubernetes.io/name: bestsellers
+    app.kubernetes.io/part-of: mlet-fase1

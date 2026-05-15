@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bestsellers-config
+  namespace: fase1
+data:
+  LOG_LEVEL: "INFO"
+  # Dashboard talks to the API via the in-cluster Service DNS name
+  API_URL: "https://bestsellers-api.pagottoo.me"

@@ -16,9 +16,11 @@ RUN pip install -r requirements.txt
 
 COPY app.py .
 
-RUN useradd --create-home --shell /bin/bash app \
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash app \
     && chown -R app:app /app
 USER app
+
 
 EXPOSE 8501
 

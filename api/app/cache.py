@@ -18,40 +18,83 @@ from .models import Book, Snapshot
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(os.getenv("DATA_DIR", Path(__file__).parent / "data"))
+_PKG_DATA = Path(__file__).parent / "data"
+DATA_DIR = Path(os.getenv("DATA_DIR", _PKG_DATA))
 CACHE_FILE = DATA_DIR / "cache.json"
-SEED_FILE = DATA_DIR / "seed.json"
+# O seed acompanha a imagem (não o volume). Quando DATA_DIR aponta para
+# um PVC vazio, o seed em _PKG_DATA garante que a API já sobe respondendo.
+SEED_FILE = _PKG_DATA / "seed.json"
 
 _lock = threading.Lock()
 _snapshot: Optional[Snapshot] = None
 
 
 def _ensure_cache_file() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    if not CACHE_FILE.exists() and SEED_FILE.exists():
-        shutil.copy(SEED_FILE, CACHE_FILE)
-        logger.info("Cache populado em %s", SEED_FILE)
+    """Garante que CACHE_FILE existe, copiando do seed se necessário.
+
+    Nunca propaga exceção: se DATA_DIR não for gravável (PVC sem permissão,
+    disco cheio, etc.), retorna silencioso. O load() detecta e cai pro seed
+    em memória para que o pod fique up mesmo com volume mal configurado.
+    """
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        if not CACHE_FILE.exists() and SEED_FILE.exists():
+            shutil.copy(SEED_FILE, CACHE_FILE)
+            logger.info("Cache populado a partir de %s -> %s", SEED_FILE, CACHE_FILE)
+    except OSError as exc:
+        logger.warning(
+            "Não foi possível inicializar DATA_DIR=%s (%s). "
+            "API vai operar com o seed em memória até a permissão ser corrigida.",
+            DATA_DIR, exc,
+        )
+
+
+def _load_file(path: Path) -> Optional[Snapshot]:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return Snapshot.model_validate(payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Falha lendo snapshot de %s: %s", path, exc)
+        return None
 
 
 def load() -> Optional[Snapshot]:
-    """Carrega o snapshot do disco na memoria. Idepotente."""
+    """Carrega o snapshot do disco na memoria. Idempotente.
+
+    Ordem de preferência:
+      1) CACHE_FILE (DATA_DIR) — snapshot mais recente
+      2) SEED_FILE (imagem)    — fallback embarcado se cache não acessível
+    """
     global _snapshot
     with _lock:
         if _snapshot is not None:
             return _snapshot
+
         _ensure_cache_file()
-        if not CACHE_FILE.exists():
-            return None
-        try:
-            with CACHE_FILE.open("r", encoding="utf-8") as f:
-                payload = json.load(f)
-            _snapshot = Snapshot.model_validate(payload)
-            logger.info("Loaded %d books from cache (fetched_at=%s)",
-                        _snapshot.count, _snapshot.fetched_at)
-            return _snapshot
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Failed to load cache: %s", exc)
-            return None
+
+        if CACHE_FILE.exists():
+            snap = _load_file(CACHE_FILE)
+            if snap is not None:
+                _snapshot = snap
+                logger.info("Cache carregado (%d livros, fetched_at=%s) de %s",
+                            snap.count, snap.fetched_at, CACHE_FILE)
+                return _snapshot
+
+        if SEED_FILE.exists():
+            snap = _load_file(SEED_FILE)
+            if snap is not None:
+                _snapshot = snap
+                logger.warning(
+                    "Servindo a partir do SEED em memória (%d livros). "
+                    "Cache em disco indisponível — POST /admin/refresh quando o "
+                    "volume estiver gravável.", snap.count,
+                )
+                return _snapshot
+
+        logger.error("Nenhuma fonte de dados disponível (cache=%s, seed=%s)",
+                     CACHE_FILE.exists(), SEED_FILE.exists())
+        return None
 
 
 def save(books: list[Book], source_url: str) -> Snapshot:
